@@ -1,0 +1,6 @@
+{
+  "host": "localhost",
+  "databaseName": "gophermarket",
+  "driverName": "postgres",
+  "databasePort": "5432"
+}
