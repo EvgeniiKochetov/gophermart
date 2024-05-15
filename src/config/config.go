@@ -6,7 +6,6 @@ import (
 	"golang.org/x/time/rate"
 	"log"
 	"os"
-	"sync"
 )
 
 type Configuration struct {
@@ -16,10 +15,10 @@ type Configuration struct {
 	DatabaseName     string `json:"databaseName"`
 	DatabaseUser     string
 	DatabasePassword string
+	SecretKey        string
 	limiter          *rate.Limiter
 }
 
-var lock = &sync.Mutex{}
 var conf *Configuration
 
 func newConf() *Configuration {
@@ -27,6 +26,7 @@ func newConf() *Configuration {
 	newConf.limiter = rate.NewLimiter(1, 1)
 	flag.StringVar(&newConf.DatabaseUser, "user", "", "user for connect to database")
 	flag.StringVar(&newConf.DatabasePassword, "pwd", "", "password")
+	flag.StringVar(&newConf.SecretKey, "secretKey", "keyMYSecret23509", "secret key to generate token")
 	flag.Parse()
 
 	b, err := os.ReadFile("./db_conf.json")
@@ -45,8 +45,6 @@ func newConf() *Configuration {
 
 func GetInstance() *Configuration {
 	if conf == nil {
-		lock.Lock()
-		defer lock.Unlock()
 		if conf == nil {
 			conf = newConf()
 		}
@@ -80,4 +78,8 @@ func GetPassword() string {
 
 func GetLimiter() *rate.Limiter {
 	return conf.limiter
+}
+
+func GetSecretKey() string {
+	return conf.SecretKey
 }

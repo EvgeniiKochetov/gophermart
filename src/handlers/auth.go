@@ -2,8 +2,14 @@ package handlers
 
 import (
 	"context"
+	"strings"
+	"time"
+
+	//	"database/sql/driver"
 	"encoding/json"
-	"gophermart/internal"
+	"github.com/dgrijalva/jwt-go"
+	"golang.org/x/crypto/bcrypt"
+	"gophermart/src/config"
 	"gophermart/src/databases"
 	"net/http"
 )
@@ -11,6 +17,11 @@ import (
 type User struct {
 	Name string `json:"login"`
 	Pwd  string `json:"password"`
+}
+
+type Claim struct {
+	Name string `json:"name"`
+	jwt.StandardClaims
 }
 
 func RegisterUser(writer http.ResponseWriter, request *http.Request) {
@@ -21,12 +32,19 @@ func RegisterUser(writer http.ResponseWriter, request *http.Request) {
 		http.Error(writer, err.Error(), http.StatusBadRequest)
 		return
 	}
+
 	if len(user.Name) == 0 || len(user.Pwd) == 0 {
 		http.Error(writer, "Empty name or password. Check request", http.StatusBadRequest)
 		return
 	}
 
-	num, err := databases.AddUser(user.Name, user.Pwd)
+	hashedPwd, err := bcrypt.GenerateFromPassword([]byte(user.Pwd), bcrypt.DefaultCost)
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	num, err := databases.AddUser(user.Name, string(hashedPwd))
 	if err != nil {
 		http.Error(writer, err.Error(), http.StatusInternalServerError)
 		return
@@ -40,42 +58,70 @@ func RegisterUser(writer http.ResponseWriter, request *http.Request) {
 }
 
 func LoginUser(writer http.ResponseWriter, request *http.Request) {
-	var authHeader = request.Header.Get(`Authorization`)
-	user_password, err := internal.GetUserPassword(authHeader)
+
+	user := User{}
+	err := json.NewDecoder(request.Body).Decode(&user)
 	if err != nil {
-		http.Error(writer,
-			"error in authorization error", http.StatusBadRequest)
+		http.Error(writer, "error when encode", http.StatusBadRequest)
 		return
 	}
 
-	userid, err := databases.CheckUser(user_password[0], user_password[1])
+	storedPwd, err := databases.GetPassword(user.Name)
+	if err != nil {
+		http.Error(writer, "error in authorization", http.StatusUnauthorized)
+		return
+	}
+
+	err = bcrypt.CompareHashAndPassword([]byte(storedPwd), []byte(user.Pwd))
 
 	if err != nil {
-		http.Error(writer, err.Error(), http.StatusInternalServerError)
+		http.Error(writer, "invaliv password", http.StatusUnauthorized)
 		return
 	}
-	if userid == 0 {
-		http.Error(writer, "wrong user/password", http.StatusUnauthorized)
+
+	expiredAt := time.Now().Add(72 * time.Hour)
+	claim := &Claim{Name: user.Name, StandardClaims: jwt.StandardClaims{ExpiresAt: expiredAt.Unix()}}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claim)
+	tokenString, err := token.SignedString([]byte(config.GetSecretKey()))
+
+	if err != nil {
+		http.Error(writer, "error when generate token", http.StatusInternalServerError)
 		return
 	}
+
+	writer.Write([]byte(tokenString))
 }
 
 func Auth(handlerFunc http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var authHeader = r.Header.Get(`Authorization`)
-		userPassword, err := internal.GetUserPassword(authHeader)
-		if err != nil {
-			http.Error(w, "error in authorization error", http.StatusBadRequest)
+
+		tokenRequest := r.Header.Get("Authorization")
+		if tokenRequest == "" {
+			http.Error(w, "don't find authorization data", http.StatusUnauthorized)
 			return
 		}
-		status, err := databases.CheckUser(userPassword[0], userPassword[1])
+		authData := strings.Split(tokenRequest, " ")
+		if len(authData) != 2 {
+			http.Error(w, "don't find authorization data", http.StatusUnauthorized)
+			return
+		}
+		tokenString := authData[1]
+		token, err := jwt.Parse(tokenString,
+			func(token *jwt.Token) (interface{}, error) { return []byte(config.GetSecretKey()), nil })
 
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusUnauthorized)
 			return
 		}
 
-		r = r.WithContext(context.WithValue(r.Context(), "userid", status))
+		claim := token.Claims.(jwt.MapClaims)
+
+		userId, err := databases.GetUserId(claim["name"].(string))
+		if err != nil {
+			http.Error(w, "don't find username", http.StatusUnauthorized)
+			return
+		}
+		r = r.WithContext(context.WithValue(r.Context(), "userid", userId))
 
 		handlerFunc(w, r)
 	}
