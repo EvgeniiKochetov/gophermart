@@ -1,7 +1,6 @@
 package databases
 
 import (
-	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -9,6 +8,7 @@ import (
 	"gophermart/src/config"
 	"gophermart/src/entities"
 	"log"
+	"net/http"
 	"sync"
 )
 
@@ -113,7 +113,9 @@ func AddOrder(number int, userid int) (int, error) {
 			return 409, nil
 		}
 	}
-
+	if rows.Err() != nil {
+		return 500, err
+	}
 	stmt, err := dbService.db.Prepare("INSERT INTO orders(id, userid, status, accrual, uploaded_at) VALUES($1, $2, '', 0, CURRENT_TIMESTAMP);")
 	if err != nil {
 		return 500, errors.New("error when adding an order")
@@ -133,7 +135,7 @@ func AddOrder(number int, userid int) (int, error) {
 func GetOrders(userid int) ([]entities.Order, error) {
 	orders := make([]entities.Order, 0)
 
-	rows, err := dbService.db.Query("select id, status, accrual, uploaded_at from orders where userid = $1 and status in ('NEW', 'PROCESSING', 'INVALID', 'PROCESSED');", userid)
+	rows, err := dbService.db.Query("select id, status, accrual, uploaded_at from orders where userid = $1 and status in ('NEW', 'PROCESSING', 'INVALID', 'PROCESSED', '');", userid)
 	if err != nil {
 		return orders, errors.New("error when getting orders")
 	}
@@ -146,6 +148,33 @@ func GetOrders(userid int) ([]entities.Order, error) {
 			return nil, err
 		}
 		orders = append(orders, order)
+	}
+	if rows.Err() != nil {
+		return orders, err
+	}
+	return orders, nil
+
+}
+
+func GetNotFinalizedOrders() ([]entities.Order, error) {
+	orders := make([]entities.Order, 0)
+
+	rows, err := dbService.db.Query("select id, status, accrual, uploaded_at from orders where status in ('NEW', 'PROCESSING', '', 'REGISTERED') limit 10 for update;")
+	if err != nil {
+		return orders, errors.New("error when getting orders")
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		order := entities.Order{}
+		err = rows.Scan(&order.Number, &order.Status, &order.Accrual, &order.UploadedAt)
+		if err != nil {
+			return nil, err
+		}
+		orders = append(orders, order)
+	}
+	if rows.Err() != nil {
+		return orders, err
 	}
 	return orders, nil
 
@@ -166,7 +195,9 @@ func GetOrder(orderId int) (entities.Order, error) {
 			return order, err
 		}
 	}
-
+	if rows.Err() != nil {
+		return order, err
+	}
 	return order, nil
 }
 
@@ -188,14 +219,17 @@ func GetBalance(userid int) (int, int, error) {
 			return 0, 0, err
 		}
 	}
+	if rows.Err() != nil {
+		return 0, 0, err
+	}
 	return balance, withdrawn, nil
 }
 
-func SetWithDraw(userid, order, sum int) (int, error) {
+func SetWithDraw(r *http.Request, userid, order, sum int) (int, error) {
 	balance := 0
 	sumbalance := 0
 
-	tx, _ := dbService.db.BeginTx(context.Background(), &sql.TxOptions{Isolation: sql.LevelSerializable})
+	tx, _ := dbService.db.BeginTx(r.Context(), &sql.TxOptions{Isolation: sql.LevelSerializable})
 	defer tx.Commit()
 
 	rows, err := dbService.db.Query("select accrual from  orders where userid = $1 and status ='PROCESSED' for update;", userid)
@@ -212,6 +246,10 @@ func SetWithDraw(userid, order, sum int) (int, error) {
 			return 500, err
 		}
 		sumbalance += balance
+	}
+
+	if rows.Err() != nil {
+		return 500, err
 	}
 
 	if sumbalance < sum {
@@ -255,6 +293,24 @@ func GetWithDrawals(userid int) ([]entities.WithDraw, error) {
 		}
 		withdrawals = append(withdrawals, withdraw)
 	}
-
+	if rows.Err() != nil {
+		return nil, err
+	}
 	return withdrawals, nil
+}
+
+func SetOrderStatus(order entities.Order) error {
+	stmt, err := dbService.db.Prepare("UPDATE orders SET status = $1, accrual = $2 WHERE id = $3 and accrual=0;")
+
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	_, err = stmt.Exec(order.Status, order.Accrual, order.Number)
+
+	if err != nil {
+		return err
+	}
+	return nil
 }

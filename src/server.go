@@ -1,7 +1,9 @@
 package src
 
 import (
+	"context"
 	"github.com/gorilla/mux"
+	"gophermart/src/external"
 	"gophermart/src/handlers"
 	"log"
 	"net/http"
@@ -21,6 +23,9 @@ func Run() {
 	r.HandleFunc("/api/user/withdrawals", handlers.Auth(handlers.WithDrawals))
 
 	r.HandleFunc("/api/orders/{number}", handlers.Order)
+
+	ctx, _ := context.WithCancel(context.Background())
+	go external.Run(ctx)
 
 	srv := &http.Server{
 		Handler:      r,

@@ -50,7 +50,7 @@ func WithDraw(writer http.ResponseWriter, request *http.Request) {
 		http.Error(writer, "error in withdraw", http.StatusInternalServerError)
 		return
 	}
-	res, err := databases.SetWithDraw(id, withdraw.Order, withdraw.Sum)
+	res, err := databases.SetWithDraw(request, id, withdraw.Order, withdraw.Sum)
 
 	writer.WriteHeader(res)
 }

@@ -9,14 +9,15 @@ import (
 )
 
 type Configuration struct {
-	DatabaseHost     string `json:"host"`
-	DatabasePort     string `json:"databasePort"`
-	DriverName       string `json:"driverName"`
-	DatabaseName     string `json:"databaseName"`
-	DatabaseUser     string
-	DatabasePassword string
-	SecretKey        string
-	limiter          *rate.Limiter
+	DatabaseHost         string `json:"host"`
+	DatabasePort         string `json:"databasePort"`
+	DriverName           string `json:"driverName"`
+	DatabaseName         string `json:"databaseName"`
+	DatabaseUser         string
+	DatabasePassword     string
+	SecretKey            string
+	limiter              *rate.Limiter
+	accrualSystemAddress string
 }
 
 var conf *Configuration
@@ -27,6 +28,7 @@ func newConf() *Configuration {
 	flag.StringVar(&newConf.DatabaseUser, "user", "", "user for connect to database")
 	flag.StringVar(&newConf.DatabasePassword, "pwd", "", "password")
 	flag.StringVar(&newConf.SecretKey, "secretKey", "keyMYSecret23509", "secret key to generate token")
+	flag.StringVar(&newConf.accrualSystemAddress, "ACCRUAL_SYSTEM_ADDRESS", "", "address accrual system")
 	flag.Parse()
 
 	b, err := os.ReadFile("./db_conf.json")
@@ -82,4 +84,8 @@ func GetLimiter() *rate.Limiter {
 
 func GetSecretKey() string {
 	return conf.SecretKey
+}
+
+func GetAccrualSystemAddress() string {
+	return conf.accrualSystemAddress
 }
