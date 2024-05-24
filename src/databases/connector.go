@@ -116,7 +116,7 @@ func AddOrder(number int, userid int) (int, error) {
 	if rows.Err() != nil {
 		return 500, err
 	}
-	stmt, err := dbService.db.Prepare("INSERT INTO orders(id, userid, status, accrual, uploaded_at) VALUES($1, $2, '', 0, CURRENT_TIMESTAMP);")
+	stmt, err := dbService.db.Prepare("INSERT INTO orders(id, userid, status, accrual, uploaded_at) VALUES($1, $2, 'NEW', 0, CURRENT_TIMESTAMP);")
 	if err != nil {
 		return 500, errors.New("error when adding an order")
 	}
@@ -135,7 +135,7 @@ func AddOrder(number int, userid int) (int, error) {
 func GetOrders(userid int) ([]entities.Order, error) {
 	orders := make([]entities.Order, 0)
 
-	rows, err := dbService.db.Query("select id, status, accrual, uploaded_at from orders where userid = $1 and status in ('NEW', 'PROCESSING', 'INVALID', 'PROCESSED', '');", userid)
+	rows, err := dbService.db.Query("select id, status, accrual, uploaded_at from orders where userid = $1 and status in ('NEW', 'PROCESSING', 'INVALID', 'PROCESSED');", userid)
 	if err != nil {
 		return orders, errors.New("error when getting orders")
 	}
@@ -159,7 +159,7 @@ func GetOrders(userid int) ([]entities.Order, error) {
 func GetNotFinalizedOrders() ([]entities.Order, error) {
 	orders := make([]entities.Order, 0)
 
-	rows, err := dbService.db.Query("select id, status, accrual, uploaded_at from orders where status in ('NEW', 'PROCESSING', '', 'REGISTERED') limit 10 for update;")
+	rows, err := dbService.db.Query("select id, status, accrual, uploaded_at from orders where status in ('NEW', 'PROCESSING', 'REGISTERED') limit 10 for update;")
 	if err != nil {
 		return orders, errors.New("error when getting orders")
 	}
